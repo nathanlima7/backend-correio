@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  passwordHash   String
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+
+  // Endereço em componentes
+  street         String
+  number         String
+  city           String
+  complement     String?
+  displayAddress String   @unique
+
+  // Relações
+  devices          Device[]
+  drafts           Draft[]
+  sentLetters      Letter[]  @relation("sender")
+  receivedLetters  Letter[]  @relation("recipient")
+  stamps           UserStamp[]
+  wallet           Wallet?
+  transactions     WalletTransaction[]
+  pushSubs         PushSubscription[]
+  reads            LetterRead[]
+  notificationPrefs NotificationPreference?
+  customStamps Stamp[] @relation("customStamps")
+}
+
+model Device {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installId    String   @unique
+  registeredAt DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  pushEnabled  Boolean  @default(false)
+
+  pushSubs     PushSubscription[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Draft {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipientAddress String?
+  title            String?
+  content          String   @default("")
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Letter {
+  id                String    @id @default(cuid())
+  trackingCode      String    @unique
+  senderId          String
+  sender            User      @relation("sender", fields: [senderId], references: [id])
+  recipientId       String?
+  recipient         User?     @relation("recipient", fields: [recipientId], references: [id])
+  recipientAddress  String
+  title             String?
+  content           String
+  status            String    @default("postada")
+  failureReason     String?
+  sentAt            DateTime  @default(now())
+  estimatedDelivery DateTime
+  deliveredAt       DateTime?
+  returnedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  events            TrackingEvent[]
+  stamps            LetterStamp[]
+  reads             LetterRead[]
+}
+
+model TrackingEvent {
+  id        String   @id @default(cuid())
+  letterId  String
+  letter    Letter   @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  status    String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model Stamp {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  imagePath   String?              // selo do catálogo (arquivo em /assets)
+  imageData   String?              // selo autoral (base64)
+  price       Int
+  category    String?              // "comum" | "incomum" | "raro" | "autoral"
+  available   Boolean  @default(true)
+
+  isCustom    Boolean  @default(false)
+  ownerId     String?
+  owner       User?    @relation("customStamps", fields: [ownerId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  userStamps   UserStamp[]
+  letterStamps LetterStamp[]
+
+  @@index([ownerId])
+}
+
+model UserStamp {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stampId    String
+  stamp      Stamp    @relation(fields: [stampId], references: [id])
+  quantity   Int      @default(1)
+  acquiredAt DateTime @default(now())
+  @@unique([userId, stampId])
+}
+
+model LetterStamp {
+  id         String  @id @default(cuid())
+  letterId   String
+  letter     Letter  @relation(fields: [letterId], references: [id], onDelete: Cascade)
+
+  stampId    String?
+  stamp      Stamp?  @relation(fields: [stampId], references: [id])
+
+  // Cópia congelada — a carta continua mostrando o selo mesmo se o Stamp original for apagado
+  name       String
+  imagePath  String?
+  imageData  String?
+  isCustom   Boolean @default(false)
+
+  quantity   Int     @default(1)
+
+  @@index([letterId])
+  @@index([stampId])
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  amount    Int
+  reason    String
+  refType   String?
+  refId     String?
+  createdAt DateTime @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id])
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  active    Boolean  @default(true)
+}
+
+model LetterRead {
+  id       String   @id @default(cuid())
+  letterId String
+  letter   Letter   @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt   DateTime @default(now())
+  @@unique([letterId, userId])
+}
+
+model NotificationPreference {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  onLetterSent      Boolean @default(true)
+  onTrackingUpdate  Boolean @default(false)
+  onLetterDelivered Boolean @default(true)
+  onDraftSynced     Boolean @default(false)
+}
+
+model DeliveryJob {
+  id         String    @id
+  letterId   String
+  nextRunAt  DateTime
+  nextStatus String
+  lockedAt   DateTime?
+  completed  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  @@index([completed, nextRunAt])
+}
