@@ -12,6 +12,7 @@ import walletRoutes from './wallet.js';
 import pushRoutes from './push.js';
 import { errorHandler, notFound, apiLimiter } from './middleware.js';
 import { startScheduler } from './delivery.js';
+import { startWeeklyResetScheduler } from './weekly-reset.js';
 
 const app = express();
 
@@ -37,4 +38,5 @@ app.use(errorHandler);
 app.listen(config.port, () => {
   console.log(`[correio-server] :${config.port} (${config.env})`);
   startScheduler();
+  startWeeklyResetScheduler();
 });
