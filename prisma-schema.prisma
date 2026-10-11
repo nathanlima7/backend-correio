@@ -161,11 +161,12 @@ model LetterStamp {
 }
 
 model Wallet {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balance   Int      @default(0)
-  updatedAt DateTime @updatedAt
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance           Int       @default(0)
+  lastWeeklyReset   DateTime?
+  updatedAt         DateTime  @updatedAt
 }
 
 model WalletTransaction {
