@@ -23,8 +23,9 @@ router.get('/', async (req, res, next) => {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Só considera "purchased" para `owned` (usável no envio)
     const owned = await prisma.userStamp.findMany({
-      where: { userId: req.userId },
+      where: { userId: req.userId, source: 'purchased' },
       select: { stampId: true, quantity: true },
     });
     const ownedMap = Object.fromEntries(owned.map((u) => [u.stampId, u.quantity]));
@@ -85,8 +86,19 @@ router.post('/:id/purchase', async (req, res, next) => {
       });
 
       const userStamp = await tx.userStamp.upsert({
-        where: { userId_stampId: { userId: req.userId, stampId: stamp.id } },
-        create: { userId: req.userId, stampId: stamp.id, quantity: 1 },
+        where: {
+          userId_stampId_source: {
+            userId: req.userId,
+            stampId: stamp.id,
+            source: 'purchased',
+          },
+        },
+        create: {
+          userId: req.userId,
+          stampId: stamp.id,
+          quantity: 1,
+          source: 'purchased',
+        },
         update: { quantity: { increment: 1 } },
       });
 
@@ -171,19 +183,20 @@ router.post('/custom', async (req, res, next) => {
           imageData: data.imageBase64,
           imagePath: null,
           price: 0,
-          category: 'autoral',
+          category: 'lendario',
           available: true,
           isCustom: true,
           ownerId: req.userId,
         },
       });
 
-      // Toda criação dá 1 uso
+      // Cria a posse com source = "purchased" (é o autor, e ele pode usar)
       await tx.userStamp.create({
         data: {
           userId: req.userId,
           stampId: stamp.id,
           quantity: 1,
+          source: 'purchased',
         },
       });
 
@@ -217,7 +230,7 @@ router.delete('/custom/:id', async (req, res, next) => {
         data: { stampId: null },
       });
 
-      // Remove o UserStamp (se ainda existir)
+      // Remove todas as UserStamp relacionadas (do próprio dono e de quem recebeu)
       await tx.userStamp.deleteMany({ where: { stampId: stamp.id } });
 
       // Apaga o Stamp em si
