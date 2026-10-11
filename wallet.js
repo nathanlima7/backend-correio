@@ -7,7 +7,7 @@ const router = Router();
 router.use(requireAuth);
 
 // ---------------------------------------------------------------
-// GET /api/wallet — saldo atual
+// GET /api/wallet — saldo atual + configuração da moeda
 // ---------------------------------------------------------------
 router.get('/', async (req, res, next) => {
   try {
@@ -18,6 +18,7 @@ router.get('/', async (req, res, next) => {
       balance: wallet.balance,
       currencyName: config.currency.name,
       currencySymbol: config.currency.symbol,
+      customStampPrice: config.currency.customStampPrice,
     });
   } catch (e) { next(e); }
 });
