@@ -14,25 +14,23 @@ model User {
   status         String   @default("active")
   createdAt      DateTime @default(now())
 
-  // Endereço em componentes
   street         String
   number         String
   city           String
   complement     String?
   displayAddress String   @unique
 
-  // Relações
   devices          Device[]
   drafts           Draft[]
   sentLetters      Letter[]  @relation("sender")
   receivedLetters  Letter[]  @relation("recipient")
   stamps           UserStamp[]
+  customStamps     Stamp[]   @relation("customStamps")
   wallet           Wallet?
   transactions     WalletTransaction[]
   pushSubs         PushSubscription[]
   reads            LetterRead[]
   notificationPrefs NotificationPreference?
-  customStamps Stamp[] @relation("customStamps")
 }
 
 model Device {
@@ -101,20 +99,20 @@ model TrackingEvent {
 }
 
 model Stamp {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  imagePath   String?              // selo do catálogo (arquivo em /assets)
-  imageData   String?              // selo autoral (base64)
-  price       Int
-  category    String?              // "comum" | "incomum" | "raro" | "autoral"
-  available   Boolean  @default(true)
+  id           String   @id @default(cuid())
+  name         String
+  imagePath    String?
+  imageData    String?
+  description  String?
+  price        Int
+  category     String?
+  available    Boolean  @default(true)
 
-  isCustom    Boolean  @default(false)
-  ownerId     String?
-  owner       User?    @relation("customStamps", fields: [ownerId], references: [id])
+  isCustom     Boolean  @default(false)
+  ownerId      String?
+  owner        User?    @relation("customStamps", fields: [ownerId], references: [id])
 
-  createdAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   userStamps   UserStamp[]
   letterStamps LetterStamp[]
@@ -151,7 +149,6 @@ model LetterStamp {
   stampId    String?
   stamp      Stamp?  @relation(fields: [stampId], references: [id])
 
-  // Cópia congelada — a carta continua mostrando o selo mesmo se o Stamp original for apagado
   name       String
   imagePath  String?
   imageData  String?
