@@ -128,9 +128,19 @@ model UserStamp {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   stampId    String
   stamp      Stamp    @relation(fields: [stampId], references: [id])
+
   quantity   Int      @default(1)
   acquiredAt DateTime @default(now())
-  @@unique([userId, stampId])
+
+  // "purchased" = comprado no catálogo OU criado pelo usuário (autoral)
+  // "received"  = recebido como prêmio por receber uma carta
+  source     String   @default("purchased")
+
+  // Só preenchido quando source = "received"
+  receivedFrom String?
+  receivedAt   DateTime?
+
+  @@unique([userId, stampId, source])
 }
 
 model LetterStamp {
