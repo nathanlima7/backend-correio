@@ -38,6 +38,7 @@ router.post('/', async (req, res, next) => {
 
     const data = schema.parse(req.body);
 
+    // 1. Endereço
     let recipientAddress = data.recipientAddress
       ? String(data.recipientAddress).trim().replace(/\s+/g, ' ')
       : null;
@@ -74,12 +75,14 @@ router.post('/', async (req, res, next) => {
     });
     const enderecoExiste = Boolean(recipient);
 
+    // 2. Normaliza a lista de selos
     const stampMap = new Map();
     for (const s of (data.stamps || [])) {
       stampMap.set(s.stampId, (stampMap.get(s.stampId) || 0) + s.quantity);
     }
     const stampList = [...stampMap.entries()].map(([stampId, quantity]) => ({ stampId, quantity }));
 
+    // 3. Extravio + ETA
     const vaiExtravirar = Math.random() < LOST_LETTER_CHANCE;
 
     const now = Date.now();
@@ -95,12 +98,15 @@ router.post('/', async (req, res, next) => {
     }
     const estimatedDelivery = new Date(now + etaMs);
 
+    // 4. Transação
     const letter = await prisma.$transaction(async (tx) => {
       if (stampList.length) {
+        // Só selos comprados/criados (source = "purchased") podem ser usados
         const owned = await tx.userStamp.findMany({
           where: {
             userId: sender.id,
             stampId: { in: stampList.map((s) => s.stampId) },
+            source: 'purchased',
           },
         });
         const ownedMap = Object.fromEntries(owned.map((u) => [u.stampId, u.quantity]));
@@ -158,14 +164,27 @@ router.post('/', async (req, res, next) => {
           },
         });
 
+        // Decrementa o estoque do remetente (source = "purchased")
         const after = await tx.userStamp.update({
-          where: { userId_stampId: { userId: sender.id, stampId } },
+          where: {
+            userId_stampId_source: {
+              userId: sender.id,
+              stampId,
+              source: 'purchased',
+            },
+          },
           data: { quantity: { decrement: quantity } },
         });
 
         if (after.quantity <= 0) {
           await tx.userStamp.delete({
-            where: { userId_stampId: { userId: sender.id, stampId } },
+            where: {
+              userId_stampId_source: {
+                userId: sender.id,
+                stampId,
+                source: 'purchased',
+              },
+            },
           });
         }
       }
@@ -222,9 +241,7 @@ router.get('/incoming', async (req, res, next) => {
         },
       },
       orderBy: { sentAt: 'desc' },
-      include: {
-        sender: { select: { username: true, displayAddress: true } },
-      },
+      include: { sender: { select: { username: true, displayAddress: true } } },
     });
     res.json(letters.map((l) => ({
       id: l.id,
