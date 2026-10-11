@@ -105,7 +105,10 @@ async function tick() {
 }
 
 async function applyStatus(letterId, status) {
-  const letter = await prisma.letter.findUnique({ where: { id: letterId } });
+  const letter = await prisma.letter.findUnique({
+    where: { id: letterId },
+    include: { stamps: true },
+  });
   if (!letter) return;
 
   const finais = ['entregue', 'extraviada', 'devolvida'];
@@ -117,16 +120,54 @@ async function applyStatus(letterId, status) {
   if (status === 'endereco_nao_localizado') patch.failureReason = 'endereco_invalido';
   if (status === 'extraviada') patch.failureReason = 'extraviada';
 
-  await prisma.$transaction([
-    prisma.letter.update({ where: { id: letterId }, data: patch }),
-    prisma.trackingEvent.create({
+  await prisma.$transaction(async (tx) => {
+    await tx.letter.update({ where: { id: letterId }, data: patch });
+    await tx.trackingEvent.create({
       data: {
         letterId,
         status,
         message: STATE_MESSAGES[status] || status,
       },
-    }),
-  ]);
+    });
+
+    // Entrega: transfere os selos para a coleção do destinatário
+    if (status === 'entregue' && letter.recipientId && letter.stamps?.length) {
+      const sender = await tx.user.findUnique({
+        where: { id: letter.senderId },
+        select: { username: true },
+      });
+      const senderName = sender?.username || 'anônimo';
+
+      for (const ls of letter.stamps) {
+        // Selo apagado (stampId = null) não transfere
+        if (!ls.stampId) continue;
+
+        // Verifica se o destinatário já tem esse selo (com source = "received")
+        const existing = await tx.userStamp.findUnique({
+          where: {
+            userId_stampId_source: {
+              userId: letter.recipientId,
+              stampId: ls.stampId,
+              source: 'received',
+            },
+          },
+        });
+
+        if (existing) continue; // regra: duplicado não soma
+
+        await tx.userStamp.create({
+          data: {
+            userId: letter.recipientId,
+            stampId: ls.stampId,
+            quantity: 1,
+            source: 'received',
+            receivedFrom: senderName,
+            receivedAt: new Date(),
+          },
+        });
+      }
+    }
+  });
 
   try {
     const { notifyTrackingUpdate, notifyLetterDelivered } = await import('./push.js');
