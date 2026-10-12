@@ -25,7 +25,7 @@ if (config.vapid.publicKey && config.vapid.privateKey && config.vapid.subject) {
 }
 
 // ---------------------------------------------------------------
-// GET /api/push/public-key — chave pública para o frontend se inscrever
+// GET /api/push/public-key
 // ---------------------------------------------------------------
 router.get('/public-key', (req, res) => {
   if (!vapidReady) {
@@ -34,6 +34,13 @@ router.get('/public-key', (req, res) => {
   res.json({ publicKey: config.vapid.publicKey });
 });
 
+// ---------------------------------------------------------------
+// POST /api/push/subscribe
+//
+// Regra: cada usuário tem NO MÁXIMO UMA inscrição ativa.
+// Ao registrar uma nova, todas as anteriores são desativadas.
+// Isso evita duplicação (PWA + Chrome no mesmo aparelho).
+// ---------------------------------------------------------------
 router.post('/subscribe', requireAuth, async (req, res, next) => {
   try {
     const schema = z.object({
@@ -46,17 +53,7 @@ router.post('/subscribe', requireAuth, async (req, res, next) => {
 
     const data = schema.parse(req.body);
 
-    // ⬇️ NOVO: desativa todas as inscrições antigas do usuário.
-    // Isso evita que o mesmo dispositivo (PWA + Chrome) receba
-    // a mesma notificação em duplicidade.
-    await prisma.pushSubscription.updateMany({
-      where: {
-        userId: req.userId,
-        endpoint: { not: data.endpoint },
-      },
-      data: { active: false },
-    });
-
+    // 1) Cria/atualiza a inscrição atual como ativa
     const sub = await prisma.pushSubscription.upsert({
       where: { endpoint: data.endpoint },
       create: {
@@ -74,12 +71,22 @@ router.post('/subscribe', requireAuth, async (req, res, next) => {
       },
     });
 
+    // 2) Desativa TODAS as outras inscrições desse usuário
+    await prisma.pushSubscription.updateMany({
+      where: {
+        userId: req.userId,
+        id: { not: sub.id },
+        active: true,
+      },
+      data: { active: false },
+    });
+
     res.status(201).json({ ok: true, id: sub.id });
   } catch (e) { next(e); }
 });
 
 // ---------------------------------------------------------------
-// DELETE /api/push/subscribe — remove uma inscrição
+// DELETE /api/push/subscribe
 // ---------------------------------------------------------------
 router.delete('/subscribe', requireAuth, async (req, res, next) => {
   try {
@@ -97,7 +104,7 @@ router.delete('/subscribe', requireAuth, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------
-// POST /api/push/test — envia uma notificação de teste
+// POST /api/push/test
 // ---------------------------------------------------------------
 router.post('/test', requireAuth, async (req, res, next) => {
   try {
@@ -117,51 +124,51 @@ router.post('/test', requireAuth, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------
-// sendPush(userId, payload) — envia para todos os dispositivos do usuário
+// sendPush(userId, payload)
+//
+// Envia para a inscrição ATIVA do usuário. Se por algum motivo
+// houver mais de uma ativa (dados antigos), envia só para a mais
+// recente — como defesa extra.
 // ---------------------------------------------------------------
 export async function sendPush(userId, payload) {
   if (!vapidReady) return 0;
 
   const subs = await prisma.pushSubscription.findMany({
     where: { userId, active: true },
+    orderBy: { createdAt: 'desc' },
+    take: 1,   // ← defesa extra: nunca envia para mais de uma
   });
 
   if (!subs.length) return 0;
 
-  let sent = 0;
+  const sub = subs[0];
+  const pushConfig = {
+    endpoint: sub.endpoint,
+    keys: { p256dh: sub.p256dh, auth: sub.auth },
+  };
 
-  for (const sub of subs) {
-    const pushConfig = {
-      endpoint: sub.endpoint,
-      keys: { p256dh: sub.p256dh, auth: sub.auth },
-    };
-
-    try {
-      await webpush.sendNotification(pushConfig, JSON.stringify(payload));
-      sent++;
-    } catch (e) {
-      // 404/410 = inscrição expirada. Desativa no banco.
-      if (e.statusCode === 404 || e.statusCode === 410) {
-        await prisma.pushSubscription.update({
-          where: { id: sub.id },
-          data: { active: false },
-        }).catch(() => {});
-      } else {
-        console.error('[push] erro ao enviar para', sub.endpoint.slice(0, 40), e.message);
-      }
+  try {
+    await webpush.sendNotification(pushConfig, JSON.stringify(payload));
+    return 1;
+  } catch (e) {
+    if (e.statusCode === 404 || e.statusCode === 410) {
+      await prisma.pushSubscription.update({
+        where: { id: sub.id },
+        data: { active: false },
+      }).catch(() => {});
+    } else {
+      console.error('[push] erro ao enviar para', sub.endpoint.slice(0, 40), e.message);
     }
+    return 0;
   }
-
-  return sent;
 }
 
 // ---------------------------------------------------------------
-// notifyLetterOnTheWay — chamada quando alguém envia uma carta
+// notifyLetterOnTheWay
 // ---------------------------------------------------------------
 export async function notifyLetterOnTheWay(letter, sender, recipient) {
   if (!recipient) return;
 
-  // Checa preferência
   const prefs = await prisma.notificationPreference.findUnique({
     where: { userId: recipient.id },
   });
@@ -176,7 +183,7 @@ export async function notifyLetterOnTheWay(letter, sender, recipient) {
 }
 
 // ---------------------------------------------------------------
-// notifyTrackingUpdate — chamada a cada mudança de status
+// notifyTrackingUpdate
 // ---------------------------------------------------------------
 export async function notifyTrackingUpdate(letterId, status) {
   const letter = await prisma.letter.findUnique({
@@ -212,15 +219,12 @@ export async function notifyTrackingUpdate(letterId, status) {
 }
 
 // ---------------------------------------------------------------
-// notifyLetterDelivered — chamada quando a carta é entregue
+// notifyLetterDelivered
 // ---------------------------------------------------------------
 export async function notifyLetterDelivered(letterId) {
-  const letter = await prisma.letter.findUnique({
-    where: { id: letterId },
-  });
+  const letter = await prisma.letter.findUnique({ where: { id: letterId } });
   if (!letter) return;
 
-  // Notifica o remetente
   if (letter.senderId) {
     const prefsSender = await prisma.notificationPreference.findUnique({
       where: { userId: letter.senderId },
@@ -235,7 +239,6 @@ export async function notifyLetterDelivered(letterId) {
     }
   }
 
-  // Notifica o destinatário (se ele existir)
   if (letter.recipientId) {
     const prefsRecipient = await prisma.notificationPreference.findUnique({
       where: { userId: letter.recipientId },
