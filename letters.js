@@ -32,6 +32,8 @@ router.post('/', async (req, res, next) => {
         quantity: z.number().int().min(1).max(20),
       })).max(10).optional(),
 
+      attachedImage: z.string().max(1_500_000).optional().nullable(),
+
       title: z.string().max(120).nullable().optional(),
       content: z.string().min(1).max(50_000),
     });
@@ -101,7 +103,6 @@ router.post('/', async (req, res, next) => {
     // 4. Transação
     const letter = await prisma.$transaction(async (tx) => {
       if (stampList.length) {
-        // Só selos comprados/criados (source = "purchased") podem ser usados
         const owned = await tx.userStamp.findMany({
           where: {
             userId: sender.id,
@@ -130,6 +131,7 @@ router.post('/', async (req, res, next) => {
           recipientAddress,
           title: data.title ?? null,
           content: data.content,
+          attachedImage: data.attachedImage ?? null,
           status: 'postada',
           estimatedDelivery,
         },
@@ -164,7 +166,6 @@ router.post('/', async (req, res, next) => {
           },
         });
 
-        // Decrementa o estoque do remetente (source = "purchased")
         const after = await tx.userStamp.update({
           where: {
             userId_stampId_source: {
@@ -338,6 +339,7 @@ router.get('/:id', async (req, res, next) => {
       returnedAt: letter.returnedAt,
       failureReason: letter.failureReason,
       content: canRead ? letter.content : null,
+      attachedImage: canRead ? letter.attachedImage : null,
       canRead,
       read: letter.reads.length > 0,
       stamps: (letter.stamps || []).map(serializeStamp),
