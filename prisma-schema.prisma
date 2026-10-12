@@ -76,6 +76,7 @@ model Letter {
   recipientAddress  String
   title             String?
   content           String
+  attachedImage     String?
   status            String    @default("postada")
   failureReason     String?
   sentAt            DateTime  @default(now())
@@ -130,11 +131,8 @@ model UserStamp {
   quantity   Int      @default(1)
   acquiredAt DateTime @default(now())
 
-  // "purchased" = comprado no catálogo OU criado pelo usuário (autoral)
-  // "received"  = recebido como prêmio por receber uma carta
   source     String   @default("purchased")
 
-  // Só preenchido quando source = "received"
   receivedFrom String?
   receivedAt   DateTime?
 
@@ -179,6 +177,8 @@ model WalletTransaction {
   refType   String?
   refId     String?
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model PushSubscription {
