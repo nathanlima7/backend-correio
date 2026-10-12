@@ -34,9 +34,6 @@ router.get('/public-key', (req, res) => {
   res.json({ publicKey: config.vapid.publicKey });
 });
 
-// ---------------------------------------------------------------
-// POST /api/push/subscribe — registra uma inscrição
-// ---------------------------------------------------------------
 router.post('/subscribe', requireAuth, async (req, res, next) => {
   try {
     const schema = z.object({
@@ -48,6 +45,17 @@ router.post('/subscribe', requireAuth, async (req, res, next) => {
     });
 
     const data = schema.parse(req.body);
+
+    // ⬇️ NOVO: desativa todas as inscrições antigas do usuário.
+    // Isso evita que o mesmo dispositivo (PWA + Chrome) receba
+    // a mesma notificação em duplicidade.
+    await prisma.pushSubscription.updateMany({
+      where: {
+        userId: req.userId,
+        endpoint: { not: data.endpoint },
+      },
+      data: { active: false },
+    });
 
     const sub = await prisma.pushSubscription.upsert({
       where: { endpoint: data.endpoint },
