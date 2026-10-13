@@ -10,12 +10,34 @@ router.use(requireAuth);
 
 // ---------------------------------------------------------------
 // GET /api/stamps — catálogo + selos autorais do usuário
+//
+// Selos sazonais só aparecem se a data atual estiver dentro da
+// janela seasonalFrom..seasonalUntil. Fora da janela, são
+// invisíveis para o frontend.
 // ---------------------------------------------------------------
 router.get('/', async (req, res, next) => {
   try {
+    const now = new Date();
+
+    // Catálogo: selos permanentes (não sazonais) OU sazonais
+    // cuja janela contém "agora".
     const catalog = await prisma.stamp.findMany({
-      where: { available: true, isCustom: false },
-      orderBy: { price: 'asc' },
+      where: {
+        available: true,
+        isCustom: false,
+        OR: [
+          { seasonal: false },
+          {
+            seasonal: true,
+            seasonalFrom:  { lte: now },
+            seasonalUntil: { gte: now },
+          },
+        ],
+      },
+      orderBy: [
+        { seasonal: 'desc' },   // sazonais primeiro
+        { price: 'asc' },
+      ],
     });
 
     const custom = await prisma.stamp.findMany({
@@ -50,6 +72,12 @@ router.get('/', async (req, res, next) => {
       category: s.category,
       isCustom: s.isCustom,
       owned: ownedMap[s.id] ?? 0,
+      // Campos sazonais — o frontend usa pra agrupar e mostrar
+      // o aviso de "termina em X dias".
+      seasonal: s.seasonal,
+      seasonalFrom: s.seasonalFrom,
+      seasonalUntil: s.seasonalUntil,
+      eventName: s.eventName,
     })));
   } catch (e) { next(e); }
 });
@@ -66,6 +94,20 @@ router.post('/:id/purchase', async (req, res, next) => {
       }
       if (stamp.isCustom && stamp.ownerId !== req.userId) {
         throw Object.assign(new Error('Selo indisponível.'), { status: 404 });
+      }
+
+      // Selos sazonais: bloqueia compra fora da janela
+      if (stamp.seasonal) {
+        const now = new Date();
+        const dentroDaJanela =
+          stamp.seasonalFrom  && stamp.seasonalFrom  <= now &&
+          stamp.seasonalUntil && stamp.seasonalUntil >= now;
+        if (!dentroDaJanela) {
+          throw Object.assign(
+            new Error('Este selo não está mais disponível.'),
+            { status: 404 }
+          );
+        }
       }
 
       const wallet = await tx.wallet.findUnique({ where: { userId: req.userId } });
@@ -203,9 +245,6 @@ router.post('/custom', async (req, res, next) => {
         },
       });
 
-      // Cria a posse com source = "purchased" (é o autor, e ele pode usar).
-      // Os campos frozen* guardam a cópia dos dados do selo para
-      // sobreviver caso o próprio Stamp seja apagado depois.
       await tx.userStamp.create({
         data: {
           userId: req.userId,
@@ -229,13 +268,6 @@ router.post('/custom', async (req, res, next) => {
 
 // ---------------------------------------------------------------
 // DELETE /api/stamps/custom/:id — apagar selo autoral
-//
-// Regra de preservação:
-//   - LetterStamp: zera o stampId, mantendo os campos congelados
-//     (a carta continua mostrando o selo mesmo se o Stamp sumir).
-//   - UserStamp do PRÓPRIO dono: apaga (é o estoque dele).
-//   - UserStamp de TERCEIROS (source = "received"): preserva,
-//     apenas zerando o stampId. A coleção deles é intocável.
 // ---------------------------------------------------------------
 router.delete('/custom/:id', async (req, res, next) => {
   try {
@@ -251,13 +283,11 @@ router.delete('/custom/:id', async (req, res, next) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Cartas: desvincula o Stamp (campos congelados permanecem)
       await tx.letterStamp.updateMany({
         where: { stampId: stamp.id },
         data: { stampId: null },
       });
 
-      // 2. Estoque do dono: apaga as UserStamp dele
       await tx.userStamp.deleteMany({
         where: {
           stampId: stamp.id,
@@ -265,7 +295,6 @@ router.delete('/custom/:id', async (req, res, next) => {
         },
       });
 
-      // 3. Coleção de terceiros: preserva, só desvincula
       await tx.userStamp.updateMany({
         where: {
           stampId: stamp.id,
@@ -274,7 +303,6 @@ router.delete('/custom/:id', async (req, res, next) => {
         data: { stampId: null },
       });
 
-      // 4. Apaga o Stamp em si
       await tx.stamp.delete({ where: { id: stamp.id } });
     });
 
