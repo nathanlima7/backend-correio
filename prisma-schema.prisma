@@ -141,6 +141,14 @@ model UserStamp {
   stampId    String?
   stamp      Stamp?   @relation(fields: [stampId], references: [id], onDelete: SetNull)
 
+  // Cópia congelada dos dados do selo no momento da aquisição.
+  // Sobrevive quando o Stamp original é apagado pelo dono.
+  frozenName      String?
+  frozenImagePath String?
+  frozenImageData String?
+  frozenCategory  String?
+  frozenIsCustom  Boolean @default(false)
+
   quantity   Int      @default(1)
   acquiredAt DateTime @default(now())
 
