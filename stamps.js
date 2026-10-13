@@ -23,9 +23,15 @@ router.get('/', async (req, res, next) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Só considera "purchased" para `owned` (usável no envio)
+    // Só considera "purchased" para `owned` (usável no envio).
+    // Filtramos stampId não-nulo: vínculos mortos (Stamp apagado) não
+    // devem aparecer no catálogo como selo disponível para uso.
     const owned = await prisma.userStamp.findMany({
-      where: { userId: req.userId, source: 'purchased' },
+      where: {
+        userId: req.userId,
+        source: 'purchased',
+        stampId: { not: null },
+      },
       select: { stampId: true, quantity: true },
     });
     const ownedMap = Object.fromEntries(
@@ -100,6 +106,11 @@ router.post('/:id/purchase', async (req, res, next) => {
           stampId: stamp.id,
           quantity: 1,
           source: 'purchased',
+          frozenName: stamp.name,
+          frozenImagePath: stamp.imagePath,
+          frozenImageData: stamp.imageData,
+          frozenCategory: stamp.category,
+          frozenIsCustom: stamp.isCustom,
         },
         update: { quantity: { increment: 1 } },
       });
@@ -192,13 +203,20 @@ router.post('/custom', async (req, res, next) => {
         },
       });
 
-      // Cria a posse com source = "purchased" (é o autor, e ele pode usar)
+      // Cria a posse com source = "purchased" (é o autor, e ele pode usar).
+      // Os campos frozen* guardam a cópia dos dados do selo para
+      // sobreviver caso o próprio Stamp seja apagado depois.
       await tx.userStamp.create({
         data: {
           userId: req.userId,
           stampId: stamp.id,
           quantity: 1,
           source: 'purchased',
+          frozenName: stamp.name,
+          frozenImagePath: stamp.imagePath,
+          frozenImageData: stamp.imageData,
+          frozenCategory: stamp.category,
+          frozenIsCustom: stamp.isCustom,
         },
       });
 
