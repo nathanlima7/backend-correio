@@ -139,10 +139,12 @@ async function applyStatus(letterId, status) {
       const senderName = sender?.username || 'anônimo';
 
       for (const ls of letter.stamps) {
-        // Selo apagado (stampId = null) não transfere
+        // Selo apagado (stampId = null) não pode ser transferido como
+        // referência viva. Os metadados congelados ficam na LetterStamp,
+        // mas o destinatário não ganha uma UserStamp.
         if (!ls.stampId) continue;
 
-        // Verifica se o destinatário já tem esse selo (com source = "received")
+        // Verifica se o destinatário já tem esse selo (source = "received")
         const existing = await tx.userStamp.findUnique({
           where: {
             userId_stampId_source: {
