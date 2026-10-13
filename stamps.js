@@ -28,7 +28,9 @@ router.get('/', async (req, res, next) => {
       where: { userId: req.userId, source: 'purchased' },
       select: { stampId: true, quantity: true },
     });
-    const ownedMap = Object.fromEntries(owned.map((u) => [u.stampId, u.quantity]));
+    const ownedMap = Object.fromEntries(
+      owned.filter((u) => u.stampId).map((u) => [u.stampId, u.quantity])
+    );
 
     const all = [...catalog, ...custom];
 
@@ -209,6 +211,13 @@ router.post('/custom', async (req, res, next) => {
 
 // ---------------------------------------------------------------
 // DELETE /api/stamps/custom/:id — apagar selo autoral
+//
+// Regra de preservação:
+//   - LetterStamp: zera o stampId, mantendo os campos congelados
+//     (a carta continua mostrando o selo mesmo se o Stamp sumir).
+//   - UserStamp do PRÓPRIO dono: apaga (é o estoque dele).
+//   - UserStamp de TERCEIROS (source = "received"): preserva,
+//     apenas zerando o stampId. A coleção deles é intocável.
 // ---------------------------------------------------------------
 router.delete('/custom/:id', async (req, res, next) => {
   try {
@@ -224,16 +233,30 @@ router.delete('/custom/:id', async (req, res, next) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Desvincula o Stamp das cartas (mantém os campos congelados nas LetterStamp)
+      // 1. Cartas: desvincula o Stamp (campos congelados permanecem)
       await tx.letterStamp.updateMany({
         where: { stampId: stamp.id },
         data: { stampId: null },
       });
 
-      // Remove todas as UserStamp relacionadas (do próprio dono e de quem recebeu)
-      await tx.userStamp.deleteMany({ where: { stampId: stamp.id } });
+      // 2. Estoque do dono: apaga as UserStamp dele
+      await tx.userStamp.deleteMany({
+        where: {
+          stampId: stamp.id,
+          userId: req.userId,
+        },
+      });
 
-      // Apaga o Stamp em si
+      // 3. Coleção de terceiros: preserva, só desvincula
+      await tx.userStamp.updateMany({
+        where: {
+          stampId: stamp.id,
+          userId: { not: req.userId },
+        },
+        data: { stampId: null },
+      });
+
+      // 4. Apaga o Stamp em si
       await tx.stamp.delete({ where: { id: stamp.id } });
     });
 
