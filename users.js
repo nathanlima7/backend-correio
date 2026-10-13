@@ -10,6 +10,9 @@ import {
 const router = Router();
 router.use(requireAuth);
 
+// -----------------------------------------------------------------
+// GET /api/users/me
+// -----------------------------------------------------------------
 router.get('/me', async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
@@ -32,6 +35,9 @@ router.get('/me', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// -----------------------------------------------------------------
+// PATCH /api/users/me/address
+// -----------------------------------------------------------------
 router.patch('/me/address', async (req, res, next) => {
   try {
     const data = z.object({
@@ -74,6 +80,9 @@ router.patch('/me/address', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// -----------------------------------------------------------------
+// PATCH /api/users/me/notification-preferences
+// -----------------------------------------------------------------
 router.patch('/me/notification-preferences', async (req, res, next) => {
   try {
     const data = z.object({
@@ -92,11 +101,39 @@ router.patch('/me/notification-preferences', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// -----------------------------------------------------------------
+// GET /api/users/me/stamps
+// Retorna APENAS os selos comprados/criados pelo usuário
+// (source = "purchased"). Selos recebidos em cartas ficam de fora —
+// estes são acessados por /me/stamps/received.
+// -----------------------------------------------------------------
 router.get('/me/stamps', async (req, res, next) => {
   try {
     const rows = await prisma.userStamp.findMany({
-      where: { userId: req.userId },
+      where: {
+        userId: req.userId,
+        source: 'purchased',
+      },
       include: { stamp: true },
+    });
+    res.json(rows);
+  } catch (e) { next(e); }
+});
+
+// -----------------------------------------------------------------
+// GET /api/users/me/stamps/received
+// Retorna APENAS os selos recebidos em cartas (source = "received").
+// São exclusivos para coleção — não podem ser usados para enviar.
+// -----------------------------------------------------------------
+router.get('/me/stamps/received', async (req, res, next) => {
+  try {
+    const rows = await prisma.userStamp.findMany({
+      where: {
+        userId: req.userId,
+        source: 'received',
+      },
+      include: { stamp: true },
+      orderBy: { receivedAt: 'desc' },
     });
     res.json(rows);
   } catch (e) { next(e); }
