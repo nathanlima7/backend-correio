@@ -113,12 +113,20 @@ model Stamp {
   ownerId      String?
   owner        User?    @relation("customStamps", fields: [ownerId], references: [id])
 
+  // Sazonal: só aparece no catálogo se hoje estiver entre
+  // seasonalFrom e seasonalUntil (inclusive, em UTC).
+  seasonal      Boolean   @default(false)
+  seasonalFrom  DateTime?
+  seasonalUntil DateTime?
+  eventName     String?
+
   createdAt    DateTime @default(now())
 
   userStamps   UserStamp[]
   letterStamps LetterStamp[]
 
   @@index([ownerId])
+  @@index([seasonal, seasonalFrom, seasonalUntil])
 }
 
 // -----------------------------------------------------------------
