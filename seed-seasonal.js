@@ -21,7 +21,7 @@ const SEASONAL_STAMPS = [
     price: 50,
     category: 'sazonal',
     seasonal: true,
-    seasonalFrom:  new Date('2026-10-01T00:00:00Z'),
+    seasonalFrom:  new Date('2026-10-25T00:00:00Z'),
     seasonalUntil: new Date('2026-11-07T23:59:59Z'),
     eventName: 'Dia das Bruxas 2026',
   },
