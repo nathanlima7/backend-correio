@@ -121,12 +121,25 @@ model Stamp {
   @@index([ownerId])
 }
 
+// -----------------------------------------------------------------
+// UserStamp: representa a posse de um selo por um usuário.
+//
+// - source = "purchased"  → comprado no catálogo ou criado pelo próprio
+//                            autor. Pode ser usado para enviar.
+// - source = "received"   → recebido em carta. Só coleção, não envia.
+//
+// stampId é NULLABLE porque, quando um selo autoral é apagado pelo
+// dono, as posses de terceiros precisam sobreviver (viram
+// "lembranças" — perdem o vínculo vivo com o Stamp, mas mantêm
+// quantity / receivedFrom / receivedAt / acquiredAt).
+// -----------------------------------------------------------------
 model UserStamp {
   id         String   @id @default(cuid())
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stampId    String
-  stamp      Stamp    @relation(fields: [stampId], references: [id])
+
+  stampId    String?
+  stamp      Stamp?   @relation(fields: [stampId], references: [id], onDelete: SetNull)
 
   quantity   Int      @default(1)
   acquiredAt DateTime @default(now())
