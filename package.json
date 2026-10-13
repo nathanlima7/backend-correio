@@ -3,14 +3,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js",
-    "migrate": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
-    "generate": "prisma generate",
-    "seed": "node prisma/seed.js",
-    "test": "vitest run"
-  },
+  "dev": "nodemon server.js",
+  "start": "node server.js",
+  "migrate": "prisma migrate dev",
+  "migrate:deploy": "prisma migrate deploy",
+  "generate": "prisma generate",
+  "seed": "node prisma/seed.js",
+  "seed:seasonal": "node prisma/seed-seasonal.js",
+  "test": "vitest run"
+},
   "dependencies": {
     "@prisma/client": "^5.20.0",
     "bcrypt": "^5.1.1",
