@@ -40,13 +40,14 @@ export async function scheduleDelivery(letterId, estimatedDelivery, opts = {}) {
 
   const now = Date.now();
   const total = estimatedDelivery.getTime() - now;
-  const steps = sequence.slice(1);
+  const steps = sequence.slice(1); // exclui 'postada' (já registrada)
 
   let acc = 0;
   for (const status of steps) {
     acc += total / steps.length;
     const runAt = new Date(now + acc);
 
+    // upsert idempotente
     await prisma.deliveryJob.upsert({
       where: { id: `${letterId}:${status}` },
       create: {
@@ -79,6 +80,7 @@ async function tick() {
     });
 
     for (const job of due) {
+      // Lock otimista
       const locked = await prisma.deliveryJob.updateMany({
         where: { id: job.id, completed: false, lockedAt: null },
         data: { lockedAt: now },
@@ -165,12 +167,20 @@ async function applyStatus(letterId, status) {
             source: 'received',
             receivedFrom: senderName,
             receivedAt: new Date(),
+            // Cópia congelada dos dados do selo no momento da entrega.
+            // Sobrevive se o remetente apagar o Stamp depois.
+            frozenName: ls.name,
+            frozenImagePath: ls.imagePath,
+            frozenImageData: ls.imageData,
+            frozenCategory: 'lendario',   // selo autoral é sempre lendário
+            frozenIsCustom: ls.isCustom,
           },
         });
       }
     }
   });
 
+  // Notifica somente nos marcos relevantes
   try {
     const { notifyTrackingUpdate, notifyLetterDelivered } = await import('./push.js');
     if (status === 'entregue') await notifyLetterDelivered(letterId);
