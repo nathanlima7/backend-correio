@@ -104,9 +104,9 @@ const STAMPS = [
     category: 'raro',
   },
   {
-    id: 'selo-chuva',
-    name: 'Selo da Chuva',
-    imagePath: 'selo-chuva.png',
+    id: 'selo-cachorro',
+    name: 'Selo da Cachorro',
+    imagePath: 'selo-cachorro.png',
     description: 'Pingos que trazem cheiro de terra.',
     price: 40,
     category: 'raro',
